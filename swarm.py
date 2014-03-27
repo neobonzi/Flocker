@@ -19,13 +19,14 @@ class SwarmSim:
     Translates a point from pymunk to pygame
     '''
     def flipyv(self, v):
-        return int(v.x), int(-v.y + self.h)
+        return (int(v.x), int(-v.y + self.h))
 
     def __init__(self):
         self.running = True
 
         pygame.init()
-        self.w, self.h = 600,600
+        pygame.display.init()
+        self.w, self.h = 640, 480
         self.screen = pygame.display.set_mode((self.w, self.h))
         self.clock = pygame.time.Clock()
 
@@ -51,8 +52,15 @@ class SwarmSim:
 
     def draw_chow(self, chow):
         color = THECOLORS["white"]
+        v = Vec2d(self.flipyv(chow.body.position))
+        orientation = chow.body.rotation_vector
 
-        pygame.draw.polygon(self.screen, color, chow.get_vertices(), 0)
+        poly_verts = map(self.flipyv, chow.get_vertices())
+
+        center = int(v.x), int(v.y)
+        p2 = Vec2d(orientation.x, -orientation.y) * 10
+        pygame.draw.polygon(self.screen, color, poly_verts, 0)
+        pygame.draw.line(self.screen, THECOLORS["red"], center, center + p2, 5)
 
     def draw_nom(self, nom):
         body = nom.body
@@ -67,25 +75,29 @@ class SwarmSim:
         chow_body = pymunk.Body(mass, moment)
         chow_body.position = Vec2d(point)
 
+        # shares collision type with noms
+        chow_body.collision_type = 1
+
+        # add motor to reduce turn speed
+        motor_body = pymunk.Body()
+        motor_constraint = pymunk.constraint.SimpleMotor(chow_body, motor_body, 0.0)
+        motor_constraint.max_force = 100.0
+
         chow_shape = pymunk.Poly(chow_body, triangle)
         chow_shape.friction = .2
-        self.space.add(chow_body, chow_shape)
+        self.space.add(chow_body, chow_shape, motor_constraint)
         return chow_shape
 
     def create_nom(self, point, mass=1.0, radius=4.0):
         moment = pymunk.moment_for_circle(mass, radius, 0.0, (0,0))
         nom_body = pymunk.Body(mass, moment)
+        nom_body.collision_type = 1
         nom_body.position = Vec2d(point)
-
-        # add motor to reduce turn speed
-        motor_body = pymunk.Body()
-        motor_constraint = pymunk.constraint.SimpleMotor(nom_body, motor_body, 0.0)
-        motor_constraint.max_force = 5.0
 
         nom_shape = pymunk.Circle(nom_body, radius, Vec2d(0,0))
         nom_shape.friction = .95
         nom_shape.collision_type = COLLTYPE_DEFAULT
-        self.space.add(nom_body, nom_shape, motor_constraint)
+        self.space.add(nom_body, nom_shape)
         return nom_shape
 
     def draw_overlay(self):
@@ -96,6 +108,7 @@ class SwarmSim:
         angularVelText = pygame.font.SysFont("courier", 15)
         label2 = angularVelText.render("Angular Velocity: " + str(self.chows[0].body.angular_velocity), 5, THECOLORS["white"])
         self.screen.blit(label2, (0, 20))
+
     def draw(self):
         self.screen.fill(THECOLORS["black"])
 
@@ -137,11 +150,11 @@ class SwarmSim:
                     self.running = False
                 elif event.key == K_RIGHT:
                     print "right"
-                    self.spin_obj(self.chows[0], 1.0, 20.0)
+                    self.spin_obj(self.chows[0], -1.0, 20.0)
 
                 elif event.key == K_LEFT:
                     print "left"
-                    self.spin_obj(self.chows[0], -1.0, 20.0)
+                    self.spin_obj(self.chows[0], 1.0, 20.0)
 
                 elif event.key == K_UP:
                     print "up"
