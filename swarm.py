@@ -2,7 +2,9 @@ import sys
 import pygame
 import pymunk
 import random
+import math
 
+from pprint import pprint
 from pygame.locals import *
 from pygame.color import *
 from pymunk.util import *
@@ -28,7 +30,7 @@ class SwarmSim:
         self.clock = pygame.time.Clock()
 
         self.space = pymunk.Space()
-
+        self.constraints = []
         ### Walls
         self.walls = []
 
@@ -37,7 +39,8 @@ class SwarmSim:
         chowPos = [(300,300)]
 
         for chow in chowPos:
-            self.chows.append(self.create_chow(chow))
+            aChow = self.create_chow(chow)
+            self.chows.append(aChow)
 
         ### Create Noms
         self.noms = []
@@ -47,7 +50,9 @@ class SwarmSim:
             self.noms.append(self.create_nom(nom))
 
     def draw_chow(self, chow):
+        color = THECOLORS["white"]
 
+        pygame.draw.polygon(self.screen, color, chow.get_vertices(), 0)
 
     def draw_nom(self, nom):
         body = nom.body
@@ -57,7 +62,7 @@ class SwarmSim:
         pygame.draw.circle(self.screen, color, pos, int(rad), 0)
 
     def create_chow(self, point, mass=1.0):
-        triangle = ((0.0, 0.0), (1.0, 3.0), (2.0, 0.0))
+        triangle = ((-10.0, 10.0), (10.0, 0.0), (-10.0, -10.0))
         moment = pymunk.moment_for_poly(mass, triangle, (0,0))
         chow_body = pymunk.Body(mass, moment)
         chow_body.position = Vec2d(point)
@@ -72,12 +77,25 @@ class SwarmSim:
         nom_body = pymunk.Body(mass, moment)
         nom_body.position = Vec2d(point)
 
+        # add motor to reduce turn speed
+        motor_body = pymunk.Body()
+        motor_constraint = pymunk.constraint.SimpleMotor(nom_body, motor_body, 0.0)
+        motor_constraint.max_force = 5.0
+
         nom_shape = pymunk.Circle(nom_body, radius, Vec2d(0,0))
         nom_shape.friction = .95
         nom_shape.collision_type = COLLTYPE_DEFAULT
-        self.space.add(nom_body, nom_shape)
+        self.space.add(nom_body, nom_shape, motor_constraint)
         return nom_shape
 
+    def draw_overlay(self):
+        angleText = pygame.font.SysFont("courier",15)
+        label = angleText.render("Angle: " + str(math.degrees(self.chows[0].body.angle)), 5, THECOLORS["white"])
+        self.screen.blit(label, (0,0))
+
+        angularVelText = pygame.font.SysFont("courier", 15)
+        label2 = angularVelText.render("Angular Velocity: " + str(self.chows[0].body.angular_velocity), 5, THECOLORS["white"])
+        self.screen.blit(label2, (0, 20))
     def draw(self):
         self.screen.fill(THECOLORS["black"])
 
@@ -91,14 +109,61 @@ class SwarmSim:
 
         pygame.display.flip()
 
+    '''
+    Applies an actionary and reactionary force to spin an object
+    in place.
+    '''
+    def spin_obj(self, obj, direction, force):
+        body = obj.body
+        # Apply the spin force
+        spinAngle = body.angle
+        spinVec = Vec2d(-1 * direction * math.sin(spinAngle), direction * math.cos(spinAngle))
+        spinVec.length = force
+        spinOffsetVec =  (5.0 * math.cos(spinAngle), 5.0 * math.sin(spinAngle))
+
+        body.apply_impulse(spinVec, spinOffsetVec)
+
+        # Apply the reactionary force
+        reactVect = Vec2d(-1 * direction * math.sin(spinAngle), direction * math.cos(spinAngle))
+        reactVect.length = -20.0
+        body.apply_impulse(reactVect, (0,0))
+
     def loop(self):
         for event in pygame.event.get():
             if event.type == QUIT:
                 self.running = False
-            elif event.type == KEYDOWN and event.key == K_ESCAPE:
-                self.running = False
+            elif event.type == KEYDOWN:
+                if event.key == K_ESCAPE:
+                    self.running = False
+                elif event.key == K_RIGHT:
+                    print "right"
+                    self.spin_obj(self.chows[0], 1.0, 20.0)
 
+                elif event.key == K_LEFT:
+                    print "left"
+                    self.spin_obj(self.chows[0], -1.0, 20.0)
+
+                elif event.key == K_UP:
+                    print "up"
+                    force = 20.0
+                    body = self.chows[0].body
+                    angle = body.angle
+                    x_force = force * math.cos(angle)
+                    y_force = force * math.sin(angle)
+                    self.chows[0].body.apply_impulse((x_force, y_force))
+
+                elif event.key == K_DOWN:
+                    print "down"
+                    force = 20.0
+                    body = self.chows[0].body
+                    angle = body.angle
+                    x_force = -force * math.cos(angle)
+                    y_force = -force * math.sin(angle)
+                    self.chows[0].body.apply_impulse((x_force, y_force))
         self.draw()
+        self.draw_overlay()
+
+        self.space.step(1/50.0)
 
         pygame.display.flip()
         self.clock.tick(50)
